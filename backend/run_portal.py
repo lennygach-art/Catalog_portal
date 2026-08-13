@@ -6,6 +6,8 @@ import subprocess
 import sys
 import webbrowser
 
+from db_setup import setup_database
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
@@ -16,6 +18,25 @@ SCANNER_PATH = Path(__file__).resolve().parent / "Movies" / "scanner.py"
 PORT = 5000
 
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
+
+
+def ensure_catalog_data():
+    """Keep the JSON scan, SQLite schema, and UI API wired together."""
+    if not MOVIES_DATA_FILE.exists():
+        subprocess.run([sys.executable, str(SCANNER_PATH)], check=False)
+
+    if not DATABASE_PATH.exists():
+        setup_database()
+        return
+
+    try:
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            conn.execute("SELECT 1 FROM movies LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        setup_database()
+
+
+ensure_catalog_data()
 
 
 def get_db_connection():
@@ -107,6 +128,6 @@ def get_movies():
 
 
 if __name__ == "__main__":
-    subprocess.run([sys.executable, str(SCANNER_PATH)], check=False)
+    ensure_catalog_data()
     webbrowser.open(f"http://localhost:{PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=False)
