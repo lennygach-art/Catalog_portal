@@ -1,6 +1,12 @@
 # Lenny Biography Portal History
 
 ```text
+Version 2.5.1 "One-Click Portal Launcher":
+Core & Backend:
+- Added a root-level `run.bat` launcher to create the virtual environment, install dependencies, open the app, and launch the browser automatically.
+- Wired the app startup flow so the catalog JSON and SQLite database are validated before the website renders, preventing broken startup states.
+- Kept the Flask app, scanner, and template/static layers connected as a single working portal stack.
+
 Version 2.5 "The Cloud Independence Update":
 Core & Backend:
 - Completely severed the application's reliance on Jellyfin. The engine is now 100% standalone!
