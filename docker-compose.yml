@@ -1,7 +1,7 @@
 services:
-  catalog-portal:
+  lenny-biography:
     build: .
-    container_name: catalog-portal
+    container_name: lenny-biography
     restart: unless-stopped
     ports:
       - "5000:5000"
