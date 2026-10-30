@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import sqlite3
 
@@ -14,7 +15,7 @@ API_KEY = "YOUR_API_KEY"
 USER_ID = "YOUR_USER_ID"
 
 
-def setup_database():
+def setup_database(scanned_roots=None):
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
@@ -58,8 +59,12 @@ def setup_database():
         for movie in movies_data:
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO movies (display_name, year, type, full_path)
+                INSERT INTO movies (display_name, year, type, full_path)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(full_path) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    year = excluded.year,
+                    type = excluded.type
                 """,
                 (
                     movie["display_name"],
@@ -69,12 +74,36 @@ def setup_database():
                 ),
             )
 
+        if scanned_roots is not None:
+            normalized_roots = [
+                os.path.normcase(os.path.abspath(root)) for root in scanned_roots
+            ]
+            scanned_paths = {
+                os.path.normcase(os.path.abspath(movie["full_path"]))
+                for movie in movies_data
+                if movie.get("full_path")
+            }
+            cursor.execute("SELECT id, full_path FROM movies WHERE full_path IS NOT NULL")
+            stale_ids = []
+            for movie_id, full_path in cursor.fetchall():
+                normalized_path = os.path.normcase(os.path.abspath(full_path))
+                if normalized_path in scanned_paths:
+                    continue
+                for root in normalized_roots:
+                    try:
+                        if os.path.commonpath([root, normalized_path]) == root:
+                            stale_ids.append((movie_id,))
+                            break
+                    except ValueError:
+                        continue
+            cursor.executemany("DELETE FROM movies WHERE id = ?", stale_ids)
+
     conn.commit()
     conn.close()
     print("Database synced with movies.json successfully!")
 
 
-def harvest():
+def harvest(only_missing=True):
     import os
     import re
     import requests
@@ -95,10 +124,13 @@ def harvest():
     CAST_DIR = PROJECT_ROOT / "static" / "cast"
     CAST_DIR.mkdir(parents=True, exist_ok=True)
 
-    cursor.execute("SELECT display_name, year, type FROM movies")
+    query = "SELECT id, display_name, year, type FROM movies"
+    if only_missing:
+        query += " WHERE thumbnail IS NULL OR thumbnail = '' OR synopsis IS NULL OR synopsis = ''"
+    cursor.execute(query)
     local_movies = cursor.fetchall()
 
-    for name, year_str, media_type in local_movies:
+    for movie_id, name, year_str, media_type in local_movies:
         search_type = "movie"
         if media_type and ("series" in media_type.lower() or "anime" in media_type.lower() or "tv" in media_type.lower()):
             search_type = "tv"
@@ -109,7 +141,7 @@ def harvest():
         params = {"api_key": TMDB_API_KEY, "query": clean_name}
         
         try:
-            res = requests.get(search_url, params=params)
+            res = requests.get(search_url, params=params, timeout=10)
             res.raise_for_status()
             results = res.json().get("results", [])
         except Exception as e:
@@ -122,7 +154,7 @@ def harvest():
             if len(first_words) > 3:
                 try:
                     params["query"] = first_words
-                    res = requests.get(search_url, params=params)
+                    res = requests.get(search_url, params=params, timeout=10)
                     results = res.json().get("results", [])
                 except:
                     pass
@@ -137,7 +169,11 @@ def harvest():
         # Details Endpoint
         details_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}"
         try:
-            details_res = requests.get(details_url, params={"api_key": TMDB_API_KEY, "append_to_response": "credits,release_dates,content_ratings"})
+            details_res = requests.get(
+                details_url,
+                params={"api_key": TMDB_API_KEY, "append_to_response": "credits,release_dates,content_ratings"},
+                timeout=10,
+            )
             details_res.raise_for_status()
             details = details_res.json()
         except:
@@ -220,14 +256,14 @@ def harvest():
             UPDATE movies
             SET thumbnail = ?, synopsis = ?, cast_list = ?, genres = ?,
                 backdrop = ?, tagline = ?, official_rating = ?, community_rating = ?, runtime = ?
-            WHERE display_name = ?
+            WHERE id = ?
             """,
             (
                 str(img_dest_path) if img_dest_path.exists() else None, 
                 synopsis, cast_json, genres,
                 str(bg_dest_path) if bg_dest_path.exists() else None,
                 tagline, off_rating, comm_rating, runtime,
-                name
+                movie_id
             ),
         )
         print(f"Harvested {name} natively from TMDB.")

@@ -3,10 +3,10 @@ import mimetypes
 from pathlib import Path
 import sqlite3
 import subprocess
-import sys
 import webbrowser
 
-from db_setup import setup_database
+from Movies.scanner import scan_movies
+from db_setup import harvest, setup_database
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
@@ -14,26 +14,24 @@ STATIC_DIR = PROJECT_ROOT / "static"
 DATA_DIR = PROJECT_ROOT / "data"
 MOVIES_DATA_FILE = DATA_DIR / "Movies" / "movies.json"
 DATABASE_PATH = Path(__file__).resolve().parent / "data" / "portal_db.db"
-SCANNER_PATH = Path(__file__).resolve().parent / "Movies" / "scanner.py"
 PORT = 5000
 
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
 
 
 def ensure_catalog_data():
-    """Keep the JSON scan, SQLite schema, and UI API wired together."""
-    if not MOVIES_DATA_FILE.exists():
-        subprocess.run([sys.executable, str(SCANNER_PATH)], check=False)
-
-    if not DATABASE_PATH.exists():
+    try:
+        scanned_movies, scanned_roots = scan_movies()
+        setup_database(scanned_roots if scanned_movies is not None else None)
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        print(f"Catalog scan/sync failed; keeping existing database where possible: {exc}")
         setup_database()
         return
 
     try:
-        with sqlite3.connect(DATABASE_PATH) as conn:
-            conn.execute("SELECT 1 FROM movies LIMIT 1").fetchone()
-    except sqlite3.OperationalError:
-        setup_database()
+        harvest(only_missing=True)
+    except Exception as exc:
+        print(f"Metadata harvest failed; the portal will still start: {exc}")
 
 
 ensure_catalog_data()
@@ -128,6 +126,5 @@ def get_movies():
 
 
 if __name__ == "__main__":
-    ensure_catalog_data()
     webbrowser.open(f"http://localhost:{PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=False)

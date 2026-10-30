@@ -9,6 +9,8 @@ if not exist ".venv\Scripts\python.exe" (
 
 call ".venv\Scripts\activate.bat"
 
+set "MOVIES_MEDIA_DIRS=E:\Win_Vault\Movies;E:\Win_Vault\Anime"
+
 python -m pip install --upgrade pip >nul 2>&1
 python -m pip install flask requests python-dotenv >nul 2>&1
 

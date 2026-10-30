@@ -1,0 +1,13 @@
+.venv/
+.git/
+.vscode/
+__pycache__/
+*.pyc
+backend/.env
+backend/data/
+data/
+static/thumbnails/
+static/cast/
+run.bat
+README.md
+*.zip
