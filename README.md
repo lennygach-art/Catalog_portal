@@ -1,6 +1,39 @@
-# Lenny Biography Portal History
+# Catalog Portal
+
+The Catalog Portal project is containerized with Docker Compose. The
+portal scans the configured Movies and Anime libraries when it starts, syncs
+the discovered titles into its catalog, and keeps its database and catalog
+data in persistent Docker volumes.
+
+## Run with Docker Compose
+
+1. Install Docker Desktop and make sure Docker Compose is available.
+2. Set `TMDB_API_KEY` in `backend/.env` to enable automatic title details,
+   posters, backdrops, and cast metadata. The portal can still start without a
+   key, but metadata harvesting will be skipped.
+3. By default, Compose mounts `E:/Win_Vault/Movies` and `E:/Win_Vault/Anime`
+   from the host as read-only media libraries. To use different locations,
+   set `MOVIES_HOST_PATH` and/or `ANIME_HOST_PATH` in a root `.env` file next
+   to `docker-compose.yml`.
+4. Start the portal with `docker compose up --build -d` and open
+   [http://localhost:5000](http://localhost:5000) in a browser. Every
+   top-level movie or show folder in the mounted libraries is scanned at
+   startup; newly added folders are picked up when the container restarts.
+
+The catalog is populated from the mounted libraries at startup. Poster and cast
+images are stored under `static/`, while the SQLite database and generated
+catalog JSON are preserved in named Docker volumes. Media files are mounted
+read-only and are not copied into the container.
+
+## Project History
 
 ```text
+Version 2.6 "The Containerized Catalog Update":
+Deployment:
+- Added Docker and Docker Compose deployment for the Catalog Portal.
+- Connected the container to the host Movies and Anime libraries using configurable, read-only bind mounts.
+- Persisted catalog and database data across container restarts.
+
 Version 2.5.1 "One-Click Portal Launcher":
 Core & Backend:
 - Added a root-level `run.bat` launcher to create the virtual environment, install dependencies, open the app, and launch the browser automatically.

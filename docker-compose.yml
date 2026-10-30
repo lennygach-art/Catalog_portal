@@ -1,19 +1,25 @@
 services:
-  lenny-biography:
+  catalog-portal:
     build: .
-    container_name: lenny-biography
+    container_name: catalog-portal
     restart: unless-stopped
     ports:
       - "5000:5000"
     env_file:
-      - backend/.env            # holds TMDB_API_KEY
+      - backend/.env # holds TMDB_API_KEY
     environment:
       # Container paths (see the volumes below). Separate with semicolons.
       MOVIES_MEDIA_DIRS: "/media/movies;/media/anime"
     volumes:
-      # --- Your media (read-only). Change the left side if your folders move ---
-      - "./media/movies:/media/movies:ro"
-      - "./media/anime:/media/anime:ro"
+      # --- Your media (read-only). Override these host paths when needed ---
+      - type: bind
+        source: ${MOVIES_HOST_PATH:-E:/Win_Vault/Movies}
+        target: /media/movies
+        read_only: true
+      - type: bind
+        source: ${ANIME_HOST_PATH:-E:/Win_Vault/Anime}
+        target: /media/anime
+        read_only: true
 
       # --- Saved posters, backdrops and cast photos (re-uses what you already have) ---
       - ./static/thumbnails:/app/static/thumbnails
