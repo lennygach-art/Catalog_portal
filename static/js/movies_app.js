@@ -54,6 +54,28 @@ async function loadMovies() {
   allMovies = await response.json();
   updateCatalogCount(allMovies.length);
   displayMovies(allMovies);
+  window.setInterval(refreshMoviesIfChanged, 30000);
+}
+
+async function refreshMoviesIfChanged() {
+  try {
+    const response = await fetch("/get-movies");
+    if (!response.ok) {
+      return;
+    }
+
+    const latestMovies = await response.json();
+    if (JSON.stringify(latestMovies) === JSON.stringify(allMovies)) {
+      return;
+    }
+
+    allMovies = latestMovies;
+    if (!currentMovie && !grid.classList.contains("player-mode")) {
+      displayMovies(getFilteredMovies(searchInput.value));
+    }
+  } catch (error) {
+    console.warn("Could not refresh the catalog list:", error);
+  }
 }
 
 function getFilteredMovies(searchTerm) {
@@ -69,7 +91,9 @@ function displayMovies(moviesToDisplay) {
   grid.innerHTML = "";
   updateCatalogCount(
     moviesToDisplay.length,
-    moviesToDisplay.length === allMovies.length ? "titles available" : "matching results",
+    moviesToDisplay.length === allMovies.length
+      ? "titles available"
+      : "matching results",
   );
 
   moviesToDisplay.forEach((movie) => {
@@ -81,9 +105,9 @@ function createMovieCard(movie) {
   const card = document.createElement("div");
   card.className = "movie-card minimal-card";
 
-  let thumbHtml = '';
+  let thumbHtml = "";
   if (movie.thumbnail) {
-    const filename = movie.thumbnail.split('\\').pop().split('/').pop();
+    const filename = movie.thumbnail.split("\\").pop().split("/").pop();
     thumbHtml = `<div class="image-wrapper"><img src="/static/thumbnails/${filename}" class="movie-thumbnail" alt="${movie.display_name} Poster" loading="lazy" /></div>`;
   } else {
     const initial = movie.display_name.charAt(0).toUpperCase();
@@ -98,7 +122,7 @@ function createMovieCard(movie) {
     ${thumbHtml}
     <div class="movie-card-content minimal-content">
         <h3>${movie.display_name}</h3>
-        <p>${movie.year || 'Unknown'}</p>
+        <p>${movie.year || "Unknown"}</p>
     </div>
   `;
 
@@ -110,22 +134,31 @@ function createMovieCard(movie) {
     const xPct = x / rect.width - 0.5;
     const yPct = y / rect.height - 0.5;
     card.style.transform = `perspective(1000px) rotateX(${-yPct * 15}deg) rotateY(${xPct * 15}deg) scale3d(1.05, 1.05, 1.05)`;
-    card.style.setProperty('--glare-x', `${(x / rect.width) * 100}%`);
-    card.style.setProperty('--glare-y', `${(y / rect.height) * 100}%`);
+    card.style.setProperty("--glare-x", `${(x / rect.width) * 100}%`);
+    card.style.setProperty("--glare-y", `${(y / rect.height) * 100}%`);
   });
 
   card.addEventListener("mouseleave", () => {
     card.style.transform = `perspective(1000px) rotateX(0) rotateY(0) scale3d(1, 1, 1)`;
-    card.style.setProperty('--glare-x', `50%`);
-    card.style.setProperty('--glare-y', `50%`);
+    card.style.setProperty("--glare-x", `50%`);
+    card.style.setProperty("--glare-y", `50%`);
   });
 
   card.onclick = async () => {
     try {
+      if (movie.type === "Video") {
+        currentMovie = null;
+        const fileName = movie.full_path.split(/[\\/]/).pop();
+        renderVideoPlayer(movie, fileName);
+        return;
+      }
+
       const files = await fetchFolderContents(movie.full_path);
       renderFolderContents(movie, files);
     } catch (error) {
-      alert(`Script crashed while opening ${movie.display_name}!\n\n${error.message}\n${error.stack}`);
+      alert(
+        `Script crashed while opening ${movie.display_name}!\n\n${error.message}\n${error.stack}`,
+      );
     }
   };
 
@@ -143,17 +176,17 @@ async function fetchFolderContents(folderPath) {
 function renderFolderContents(movie, files) {
   currentMovie = movie;
   grid.classList.remove("player-mode");
-  
-  let castHtml = '';
+
+  let castHtml = "";
   if (movie.cast_list) {
     try {
       const castArray = JSON.parse(movie.cast_list);
-      let castCardsHtml = '';
-      castArray.forEach(c => {
-        let imgTag = c.image 
-           ? `<img src="/static/cast/${c.image}" class="cast-photo" alt="${c.name}" loading="lazy" />`
-           : `<div class="cast-photo-fallback">${c.name.charAt(0).toUpperCase()}</div>`;
-           
+      let castCardsHtml = "";
+      castArray.forEach((c) => {
+        let imgTag = c.image
+          ? `<img src="/static/cast/${c.image}" class="cast-photo" alt="${c.name}" loading="lazy" />`
+          : `<div class="cast-photo-fallback">${c.name.charAt(0).toUpperCase()}</div>`;
+
         castCardsHtml += `
           <div class="cast-member">
             ${imgTag}
@@ -162,7 +195,7 @@ function renderFolderContents(movie, files) {
           </div>
         `;
       });
-      
+
       if (castCardsHtml) {
         castHtml = `
           <div class="detail-cast-section">
@@ -173,18 +206,18 @@ function renderFolderContents(movie, files) {
           </div>
         `;
       }
-    } catch(e) {}
+    } catch (e) {}
   }
-  
-  let thumbHtml = '';
+
+  let thumbHtml = "";
   if (movie.thumbnail) {
-    const filename = movie.thumbnail.split('\\').pop().split('/').pop();
+    const filename = movie.thumbnail.split("\\").pop().split("/").pop();
     thumbHtml = `<img src="/static/thumbnails/${filename}" class="detail-thumbnail" alt="${movie.display_name} Poster" />`;
-    
+
     extractAverageColor(`/static/thumbnails/${filename}`, (color) => {
-      const detailView = document.querySelector('.movie-detail-view');
+      const detailView = document.querySelector(".movie-detail-view");
       if (detailView) {
-        detailView.style.setProperty('--movie-theme', color);
+        detailView.style.setProperty("--movie-theme", color);
       }
     });
   } else {
@@ -196,14 +229,16 @@ function renderFolderContents(movie, files) {
     `;
   }
 
-  let bgHtml = '';
+  let bgHtml = "";
   if (movie.backdrop) {
-    const bgFilename = movie.backdrop.split('\\').pop().split('/').pop();
+    const bgFilename = movie.backdrop.split("\\").pop().split("/").pop();
     bgHtml = `<div class="detail-backdrop" style="background-image: url('/static/thumbnails/${bgFilename}')"></div>`;
   }
 
-  const runtimeText = movie.runtime ? `${Math.floor(movie.runtime / 60)} hr ${movie.runtime % 60} min` : '';
-  
+  const runtimeText = movie.runtime
+    ? `${Math.floor(movie.runtime / 60)} hr ${movie.runtime % 60} min`
+    : "";
+
   const detailsHtml = `
     <div class="movie-detail-view">
         ${bgHtml}
@@ -212,40 +247,40 @@ function renderFolderContents(movie, files) {
             ${thumbHtml}
             <div class="detail-content">
                 <h2 class="catalog-section-title">${movie.display_name}</h2>
-                ${movie.tagline ? `<p class="detail-tagline">"${movie.tagline}"</p>` : ''}
+                ${movie.tagline ? `<p class="detail-tagline">"${movie.tagline}"</p>` : ""}
                 
                 <div class="detail-meta">
-                    ${movie.community_rating ? `<span class="rating-star">★ ${movie.community_rating.toFixed(1)}</span>` : ''}
-                    ${movie.official_rating ? `<span class="movie-badge cert-badge">${movie.official_rating}</span>` : ''}
-                    <span class="movie-badge">${movie.year || 'Unknown'}</span>
-                    ${runtimeText ? `<span class="movie-badge runtime">${runtimeText}</span>` : ''}
+                    ${movie.community_rating ? `<span class="rating-star">★ ${movie.community_rating.toFixed(1)}</span>` : ""}
+                    ${movie.official_rating ? `<span class="movie-badge cert-badge">${movie.official_rating}</span>` : ""}
+                    <span class="movie-badge">${movie.year || "Unknown"}</span>
+                    ${runtimeText ? `<span class="movie-badge runtime">${runtimeText}</span>` : ""}
                 </div>
                 
-                ${movie.synopsis ? `<p class="detail-synopsis">${movie.synopsis}</p>` : ''}
-                ${movie.genres ? `<p class="detail-genres"><strong>Genres:</strong> ${movie.genres}</p>` : ''}
+                ${movie.synopsis ? `<p class="detail-synopsis">${movie.synopsis}</p>` : ""}
+                ${movie.genres ? `<p class="detail-genres"><strong>Genres:</strong> ${movie.genres}</p>` : ""}
                 ${castHtml}
             </div>
         </div>
     </div>
   `;
-  
-  grid.innerHTML = '';
-  
+
+  grid.innerHTML = "";
+
   const topToolbar = document.createElement("div");
   topToolbar.className = "top-back-toolbar";
   topToolbar.appendChild(createResultsBackButton());
   grid.appendChild(topToolbar);
-  
-  grid.insertAdjacentHTML('beforeend', detailsHtml);
+
+  grid.insertAdjacentHTML("beforeend", detailsHtml);
   updateCatalogCount(files.length, "items in folder");
-  
+
   const contentSection = document.createElement("div");
   contentSection.className = "folder-contents-section";
-  
+
   files.forEach((fileName) => {
     contentSection.appendChild(createFileItem(movie, fileName));
   });
-  
+
   grid.appendChild(contentSection);
 }
 
@@ -275,7 +310,11 @@ function createFileItem(movie, fileName) {
 }
 
 function renderVideoPlayer(movie, fileName) {
-  const videoUrl = `/stream-video?path=${encodeURIComponent(`${movie.full_path}\\${fileName}`)}`;
+  const videoPath =
+    movie.type === "Video"
+      ? movie.full_path
+      : `${movie.full_path}\\${fileName}`;
+  const videoUrl = `/stream-video?path=${encodeURIComponent(videoPath)}`;
   const videoType = getVideoMimeType(fileName);
 
   grid.classList.add("player-mode");
@@ -333,7 +372,7 @@ function renderVideoPlayer(movie, fileName) {
 
   document.getElementById("close-player").onclick = async () => {
     document.removeEventListener("keydown", keyHandler);
-    if(document.fullscreenElement) document.exitFullscreen();
+    if (document.fullscreenElement) document.exitFullscreen();
     if (!currentMovie) {
       displayMovies(getFilteredMovies(searchInput.value));
       return;
@@ -343,9 +382,10 @@ function renderVideoPlayer(movie, fileName) {
   };
 
   const togglePlay = () => {
-    if(video.paused) video.play(); else video.pause();
+    if (video.paused) video.play();
+    else video.pause();
   };
-  
+
   playBtn.onclick = togglePlay;
   centerPlay.onclick = togglePlay;
 
@@ -368,14 +408,16 @@ function renderVideoPlayer(movie, fileName) {
   };
 
   const formatTime = (s) => {
-    if(isNaN(s)) return "0:00";
-    const m = Math.floor(s/60);
-    const sec = Math.floor(s%60).toString().padStart(2,'0');
+    if (isNaN(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60)
+      .toString()
+      .padStart(2, "0");
     return `${m}:${sec}`;
   };
 
   video.ontimeupdate = () => {
-    if(video.duration) {
+    if (video.duration) {
       const pct = (video.currentTime / video.duration) * 100;
       progSlider.value = pct;
       progFill.style.width = `${pct}%`;
@@ -388,14 +430,14 @@ function renderVideoPlayer(movie, fileName) {
     video.currentTime = (e.target.value / 100) * video.duration;
   };
 
-  volSlider.oninput = (e) => { 
-    video.volume = e.target.value; 
-    video.muted = false; 
+  volSlider.oninput = (e) => {
+    video.volume = e.target.value;
+    video.muted = false;
     muteBtn.innerText = video.volume === 0 ? "🔇" : "🔊";
   };
-  
-  muteBtn.onclick = () => { 
-    video.muted = !video.muted; 
+
+  muteBtn.onclick = () => {
+    video.muted = !video.muted;
     muteBtn.innerText = video.muted ? "🔇" : "🔊";
   };
 
@@ -406,20 +448,24 @@ function renderVideoPlayer(movie, fileName) {
 
   let fadeTimeout;
   const showControls = () => {
-    controls.style.opacity = '1';
-    container.style.cursor = 'default';
+    controls.style.opacity = "1";
+    container.style.cursor = "default";
     clearTimeout(fadeTimeout);
     fadeTimeout = setTimeout(() => {
-      if(!video.paused) {
-        controls.style.opacity = '0';
-        container.style.cursor = 'none';
+      if (!video.paused) {
+        controls.style.opacity = "0";
+        container.style.cursor = "none";
       }
     }, 2500);
   };
-  
+
   container.onmousemove = showControls;
   container.addEventListener("click", (e) => {
-    if (e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT" && !e.target.closest('button')) {
+    if (
+      e.target.tagName !== "BUTTON" &&
+      e.target.tagName !== "INPUT" &&
+      !e.target.closest("button")
+    ) {
       togglePlay();
     }
     showControls();
@@ -427,8 +473,7 @@ function renderVideoPlayer(movie, fileName) {
 }
 
 function isVideoFile(fileName) {
-  const lowerName = fileName.toLowerCase();
-  return lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv");
+  return /\.(avi|m2ts|m4v|mkv|mov|mp4|mpeg|mpg|ts|webm|wmv)$/i.test(fileName);
 }
 
 function getVideoMimeType(fileName) {
@@ -440,6 +485,26 @@ function getVideoMimeType(fileName) {
 
   if (lowerName.endsWith(".mkv")) {
     return "video/x-matroska";
+  }
+
+  if (lowerName.endsWith(".webm")) {
+    return "video/webm";
+  }
+
+  if (lowerName.endsWith(".mov") || lowerName.endsWith(".m4v")) {
+    return "video/mp4";
+  }
+
+  if (lowerName.endsWith(".avi")) {
+    return "video/x-msvideo";
+  }
+
+  if (lowerName.endsWith(".wmv")) {
+    return "video/x-ms-wmv";
+  }
+
+  if (/\.(m2ts|mpeg|mpg|ts)$/i.test(fileName)) {
+    return "video/mp2t";
   }
 
   return "";
@@ -460,22 +525,28 @@ function extractAverageColor(imgSrc, callback) {
   img.crossOrigin = "Anonymous";
   img.src = imgSrc;
   img.onload = () => {
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = 5;
     canvas.height = 5;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, 5, 5);
     try {
       const data = ctx.getImageData(0, 0, 5, 5).data;
-      let r = 0, g = 0, b = 0;
+      let r = 0,
+        g = 0,
+        b = 0;
       for (let i = 0; i < data.length; i += 4) {
-        r += data[i]; g += data[i+1]; b += data[i+2];
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
       }
       const count = data.length / 4;
-      callback(`rgb(${Math.round(r/count)}, ${Math.round(g/count)}, ${Math.round(b/count)})`);
-    } catch(e) {
-      callback('transparent');
+      callback(
+        `rgb(${Math.round(r / count)}, ${Math.round(g / count)}, ${Math.round(b / count)})`,
+      );
+    } catch (e) {
+      callback("transparent");
     }
   };
-  img.onerror = () => callback('transparent');
+  img.onerror = () => callback("transparent");
 }

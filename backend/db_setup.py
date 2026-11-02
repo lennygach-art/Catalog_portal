@@ -126,7 +126,7 @@ def harvest(only_missing=True):
 
     query = "SELECT id, display_name, year, type FROM movies"
     if only_missing:
-        query += " WHERE thumbnail IS NULL OR thumbnail = '' OR synopsis IS NULL OR synopsis = ''"
+        query += " WHERE (thumbnail IS NULL OR thumbnail = '' OR synopsis IS NULL OR synopsis = '')"
     cursor.execute(query)
     local_movies = cursor.fetchall()
 
@@ -135,10 +135,30 @@ def harvest(only_missing=True):
         if media_type and ("series" in media_type.lower() or "anime" in media_type.lower() or "tv" in media_type.lower()):
             search_type = "tv"
             
-        clean_name = re.sub(r'(?i)SEASON\s*\d+|English Dub|\b(20\d{2}|19\d{2})\b', '', name).strip()
+        clean_name = name
+        if media_type != "Video":
+            clean_name = re.sub(
+                r"(?i)\bSEASON\s*\d+|English Dub|\b(20\d{2}|19\d{2})\b",
+                "",
+                name,
+            ).strip()
+
+        if media_type == "Video":
+            clean_name = re.sub(r"[._]+", " ", name).strip()
+            clean_name = re.split(
+                r"(?i)\b(?:2160p|1080p|720p|480p|4k|uhd|web[ ._-]?dl|"
+                r"web[ ._-]?rip|blu[ ._-]?ray|bluray|brrip|hdrip|dvdrip|"
+                r"h\.?26[45]|x26[45]|hevc|av1|aac|ddp|dts|hdtv|repack)\b",
+                clean_name,
+                maxsplit=1,
+            )[0].strip(" -_.()[]")
         
         search_url = f"https://api.themoviedb.org/3/search/{search_type}"
         params = {"api_key": TMDB_API_KEY, "query": clean_name}
+        if media_type == "Video":
+            year_match = re.search(r"\b(19\d{2}|20\d{2})\b", clean_name)
+            if year_match:
+                params["year"] = year_match.group(1)
         
         try:
             res = requests.get(search_url, params=params, timeout=10)

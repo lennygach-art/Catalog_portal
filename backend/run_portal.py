@@ -1,12 +1,14 @@
 from flask import Flask, jsonify, render_template, request, send_file
 import mimetypes
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import threading
+import time
 import webbrowser
 
-from Movies.scanner import scan_movies
-from db_setup import harvest, setup_database
+from catalog_sync import harvest_missing_metadata, update_catalog
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
@@ -15,26 +17,97 @@ DATA_DIR = PROJECT_ROOT / "data"
 MOVIES_DATA_FILE = DATA_DIR / "Movies" / "movies.json"
 DATABASE_PATH = Path(__file__).resolve().parent / "data" / "portal_db.db"
 PORT = 5000
+CATALOG_SCAN_INTERVAL_SECONDS = 60
+METADATA_RETRY_INTERVAL_SECONDS = 6 * 60 * 60
+CATALOG_WATCHER_STOP = threading.Event()
+VIDEO_MIME_TYPES = {
+    ".avi": "video/x-msvideo",
+    ".m2ts": "video/mp2t",
+    ".m4v": "video/mp4",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
+    ".mp4": "video/mp4",
+    ".mpeg": "video/mpeg",
+    ".mpg": "video/mpeg",
+    ".ts": "video/mp2t",
+    ".webm": "video/webm",
+    ".wmv": "video/x-ms-wmv",
+}
 
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR), static_folder=str(STATIC_DIR))
 
 
-def ensure_catalog_data():
+def ensure_catalog_data(
+    force=False,
+    refresh_missing_metadata=False,
+    harvest_metadata=True,
+):
     try:
-        scanned_movies, scanned_roots = scan_movies()
-        setup_database(scanned_roots if scanned_movies is not None else None)
-    except (OSError, ValueError, sqlite3.Error) as exc:
-        print(f"Catalog scan/sync failed; keeping existing database where possible: {exc}")
-        setup_database()
-        return
-
-    try:
-        harvest(only_missing=True)
+        return update_catalog(
+            force=force,
+            refresh_missing_metadata=refresh_missing_metadata,
+            harvest_metadata=harvest_metadata,
+        )
     except Exception as exc:
-        print(f"Metadata harvest failed; the portal will still start: {exc}")
+        print(f"Catalog refresh failed; keeping the existing catalog: {exc}")
+        return False
 
 
-ensure_catalog_data()
+def watch_catalog_changes():
+    try:
+        interval = max(
+            10,
+            int(os.getenv("CATALOG_SCAN_INTERVAL_SECONDS", CATALOG_SCAN_INTERVAL_SECONDS)),
+        )
+    except ValueError:
+        interval = CATALOG_SCAN_INTERVAL_SECONDS
+
+    try:
+        metadata_interval = max(
+            interval,
+            int(
+                os.getenv(
+                    "METADATA_RETRY_INTERVAL_SECONDS",
+                    METADATA_RETRY_INTERVAL_SECONDS,
+                )
+            ),
+        )
+    except ValueError:
+        metadata_interval = METADATA_RETRY_INTERVAL_SECONDS
+    last_metadata_check = time.monotonic()
+
+    while not CATALOG_WATCHER_STOP.wait(interval):
+        changed = ensure_catalog_data()
+        now = time.monotonic()
+        if changed:
+            last_metadata_check = now
+        elif now - last_metadata_check >= metadata_interval:
+            ensure_catalog_data(refresh_missing_metadata=True)
+            last_metadata_check = now
+
+
+def start_catalog_watcher():
+    watcher = threading.Thread(
+        target=watch_catalog_changes,
+        name="catalog-change-watcher",
+        daemon=True,
+    )
+    watcher.start()
+
+
+def start_metadata_harvester():
+    def harvest_in_background():
+        try:
+            harvest_missing_metadata()
+        except Exception as exc:
+            print(f"Background thumbnail refresh failed: {exc}")
+
+    harvester = threading.Thread(
+        target=harvest_in_background,
+        name="metadata-harvester",
+        daemon=True,
+    )
+    harvester.start()
 
 
 def get_db_connection():
@@ -93,6 +166,9 @@ def stream_video():
     if not video_path:
         return "Video not found", 404
 
+    if os.sep == "/":
+        video_path = video_path.replace("\\", "/")
+
     target = Path(video_path)
     if not target.exists():
         print(f"Error: Video not found at {video_path}")
@@ -102,7 +178,11 @@ def stream_video():
     return send_file(
         target,
         conditional=True,
-        mimetype=guessed_type or "application/octet-stream",
+        mimetype=(
+            guessed_type
+            or VIDEO_MIME_TYPES.get(target.suffix.lower())
+            or "application/octet-stream"
+        ),
     )
 
 
@@ -126,5 +206,8 @@ def get_movies():
 
 
 if __name__ == "__main__":
+    ensure_catalog_data(force=True, harvest_metadata=False)
+    start_metadata_harvester()
+    start_catalog_watcher()
     webbrowser.open(f"http://localhost:{PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=False)

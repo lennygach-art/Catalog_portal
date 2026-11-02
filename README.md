@@ -17,17 +17,35 @@ data in persistent Docker volumes.
    to `docker-compose.yml`.
 4. Start the portal with `docker compose up --build -d` and open
    [http://localhost:5000](http://localhost:5000) in a browser. Every
-   top-level movie or show folder in the mounted libraries is scanned at
-   startup; newly added folders are picked up when the container restarts.
+   top-level movie or show folder and supported video files directly inside
+   the mounted libraries are scanned at startup and every 60 seconds. Root-level
+   videos appear as playable catalog entries; videos inside show/movie folders
+   remain listed when opening that folder. Added items appear and deleted items
+   are removed automatically. An open catalog page refreshes after each sync.
+   Change `CATALOG_SCAN_INTERVAL_SECONDS` in Compose to adjust the scan interval
+   (minimum 10 seconds).
 
 The catalog is populated from the mounted libraries at startup. Poster and cast
 images are stored under `static/`, while the SQLite database and generated
 catalog JSON are preserved in named Docker volumes. Media files are mounted
-read-only and are not copied into the container.
+read-only and are not copied into the container. A scan only rewrites the
+catalog JSON and syncs the database when the discovered folder list changes.
+New entries are checked for TMDB metadata and poster images. Entries still
+missing a poster or details are retried every six hours, controlled by
+`METADATA_RETRY_INTERVAL_SECONDS` (default `21600`). Set `TMDB_API_KEY` in
+`backend/.env`; artwork is only available when TMDB has a match and poster.
+To trigger a one-time scan manually against the mounted libraries, run
+`docker compose exec lenny-biography python backend/catalog_sync.py`.
 
 ## Project History
 
 ```text
+Version 2.7 "The Missing Artwork Refresh":
+Catalog:
+- Include standalone video files in TMDB artwork harvesting using cleaned release names and detected years.
+- Retry catalog entries that still lack thumbnails or metadata every six hours.
+- Normalize season/year/title parsing before TMDB lookup, stripping release tags such as COMPLETE, 720p, WEB-DL, and codec labels.
+
 Version 2.6 "The Containerized Catalog Update":
 Deployment:
 - Added Docker and Docker Compose deployment for the Catalog Portal.

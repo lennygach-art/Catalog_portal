@@ -10,6 +10,8 @@ services:
     environment:
       # Container paths (see the volumes below). Separate with semicolons.
       MOVIES_MEDIA_DIRS: "/media/movies;/media/anime"
+      CATALOG_SCAN_INTERVAL_SECONDS: "60"
+      METADATA_RETRY_INTERVAL_SECONDS: "21600"
     volumes:
       # --- Your media (read-only). Override these host paths when needed ---
       - type: bind
